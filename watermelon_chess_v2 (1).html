@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>שחמט אבטיח דיגיטלי</title>
+<style>
+body {
+    margin: 0;
+    background: #f4e4bc;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: Arial, sans-serif;
+    color: #444;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+h1 {
+    margin-bottom: 10px;
+    color: #704214;
+    font-size: 2.2rem;
+}
+
+.controls-bar {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 15px;
+    background: #fff;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 2px solid #704214;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.controls-bar label {
+    font-weight: bold;
+    color: #704214;
+}
+
+.controls-bar select, .controls-bar button {
+    padding: 6px 12px;
+    border-radius: 5px;
+    border: 1px solid #704214;
+    background: #faf6ee;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.controls-bar button {
+    background: #704214;
+    color: white;
+    font-weight: bold;
+}
+
+.controls-bar button:hover {
+    background: #5a3410;
+}
+
+.status-bar {
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: #704214;
+    margin-bottom: 15px;
+    background: #e8d0a9;
+    padding: 6px 20px;
+    border-radius: 20px;
+    border: 1px solid #c29b61;
+}
+
+.game-container {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+canvas {
+    background: #e4b87b;
+    border: 3px solid #704214;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.rules-panel {
+    background: #fff;
+    border: 2px solid #704214;
+    border-radius: 8px;
+    padding: 20px;
+    width: 280px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.rules-panel h3 {
+    margin-top: 0;
+    color: #704214;
+    border-bottom: 2px solid #e4b87b;
+    padding-bottom: 8px;
+}
+
+.rules-panel ul {
+    padding-right: 20px;
+    margin: 0;
+}
+
+.rules-panel li {
+    margin-bottom: 10px;
+    font-size: 14px;
+    line-height: 1.5;
+}
+</style>
+</head>
+<body>
+
+<h1>שחמט אבטיח</h1>
+
+<div class="controls-bar">
+    <div>
+        <label for="gameMode">מצב משחק: </label>
+        <select id="gameMode" onchange="changeGameMode()">
+            <option value="pvb">שחקן מול בוט</option>
+            <option value="pvp">שחקן מול שחקן (משחק עצמי)</option>
+        </select>
+    </div>
+    <div id="difficultyContainer">
+        <label for="botDifficulty">רמת קושי לבוט: </label>
+        <select id="botDifficulty">
+            <option value="1">קל</option>
+            <option value="3">בינוני</option>
+            <option value="5" selected>קשה</option>
+        </select>
+    </div>
+    <button onclick="resetGame()">משחק חדש</button>
+</div>
+
+<div class="status-bar" id="statusBar">תור שחקן לבן (W)</div>
+
+<div class="game-container">
+    <canvas id="board" width="1000" height="700"></canvas>
+    
+    <div class="rules-panel">
+        <h3>חוקי המשחק</h3>
+        <ul>
+            <li><strong>מטרה:</strong> לצמצם את כמות הכלים של היריב ל-2 בלבד או פחות כדי לנצח.</li>
+            <li><strong>תנועה:</strong> לחץ על כלי שלך ואז על נקודה ירוקה פנויה כדי להזיז אותו לאורך הקווים בלוח.</li>
+            <li><strong>לכידה:</strong> כלי נלכד ומוסר מהלוח כאשר הוא מוקף לחלוטין על ידי כלי היריב ואין לו לאן לזוז בסביבתו הישירה.</li>
+            <li><strong>תורים:</strong> לבן מתחיל ראשון. במצב שחקן מול שחקן ניתן לשחק מול חבר או מול עצמך!</li>
+        </ul>
+    </div>
+</div>
+
+<script>
+const GRAPH = {
+0:[1,2,3,4],
+1:[0,2,4,5],
+2:[0,1,3,6],
+3:[0,2,4,7],
+4:[0,1,3,8],
+5:[1,9,10,11],
+6:[2,12,13,14],
+7:[3,15,16,17],
+8:[4,18,19,20],
+9:[5,10,11],
+10:[5,9,11],
+11:[5,10,12],
+12:[6,11,13],
+13:[6,12,14],
+14:[6,13,15],
+15:[7,14,16],
+16:[7,15,17],
+17:[7,16,18],
+18:[8,17,19],
+19:[8,18,20],
+20:[8,19,9]
+};
+
+const PLAYER = "W";
+const BOT = "B";
+const EMPTY = ".";
+
+const START_PLAYER = [7,18,17,16,15,14];
+const START_BOT = [5,20,9,10,11,12];
+
+const canvas = document.getElementById("board");
+const ctx = canvas.getContext("2d");
+
+let board = Array(21).fill(EMPTY);
+let selected = null;
+let legalTargets = [];
+let currentTurn = PLAYER;
+let gameMode = "pvb";
+let isGameOver = false;
+
+function resetGame() {
+    board = Array(21).fill(EMPTY);
+    START_PLAYER.forEach(p => board[p] = PLAYER);
+    START_BOT.forEach(p => board[p] = BOT);
+    selected = null;
+    legalTargets = [];
+    currentTurn = PLAYER;
+    isGameOver = false;
+    updateStatus();
+    draw();
+}
+
+function changeGameMode() {
+    gameMode = document.getElementById("gameMode").value;
+    const diffContainer = document.getElementById("difficultyContainer");
+    if (gameMode === "pvp") {
+        diffContainer.style.display = "none";
+    } else {
+        diffContainer.style.display = "block";
+    }
+    resetGame();
+}
+
+function updateStatus() {
+    const bar = document.getElementById("statusBar");
+    if (isGameOver) return;
+    if (gameMode === "pvb") {
+        if (currentTurn === PLAYER) {
+            bar.textContent = "תורך (לבן)";
+        } else {
+            bar.textContent = "הבוט (שחור) חושב...";
+        }
+    } else {
+        if (currentTurn === PLAYER) {
+            bar.textContent = "תור שחקן לבן (W)";
+        } else {
+            bar.textContent = "תור שחקן שחור (B)";
+        }
+    }
+}
+
+const POSITIONS = {};
+const cx = 500;
+const cy = 350;
+
+POSITIONS[0] = [cx, cy];
+
+[1,2,3,4].forEach((n,i)=>{
+ let a = (i*90-90)*Math.PI/180;
+ POSITIONS[n] = [cx+100*Math.cos(a), cy+100*Math.sin(a)];
+});
+
+[5,6,7,8].forEach((n,i)=>{
+ let a = (i*90-90)*Math.PI/180;
+ POSITIONS[n] = [cx+220*Math.cos(a), cy+220*Math.sin(a)];
+});
+
+[9,10,11,12,13,14,15,16,17,18,19,20].forEach((n,i)=>{
+ let a = (i*30-90)*Math.PI/180;
+ POSITIONS[n] = [cx+330*Math.cos(a), cy+330*Math.sin(a)];
+});
+
+function getPositionsBoard(b, side){
+ let r = [];
+ for(let i=0; i<b.length; i++){
+  if(b[i] === side) r.push(i);
+ }
+ return r;
+}
+
+function possibleDestinationsBoard(b, piece){
+ return GRAPH[piece].filter(x => b[x] === EMPTY);
+}
+
+function legalMovesBoard(b, side){
+ let moves = [];
+ for(let i=0; i<b.length; i++){
+  if(b[i] !== side) continue;
+  for(const dst of possibleDestinationsBoard(b, i)){
+   moves.push({piece: i, dst: dst});
+  }
+ }
+ return moves;
+}
+
+function isImmobilizedBoard(b, pos, capturer){
+ let emptyCount = 0;
+ let enemy = false;
+ for(const n of GRAPH[pos]){
+  if(b[n] === EMPTY){
+   emptyCount++;
+  }else if(b[n] === capturer){
+   enemy = true;
+  }
+ }
+ return (emptyCount === 0 && enemy);
+}
+
+function captureImmobilizedBoard(b, side){
+ let copy = [...b];
+ const opponent = (side === PLAYER) ? BOT : PLAYER;
+ for(const pos of getPositionsBoard(copy, opponent)){
+  if(isImmobilizedBoard(copy, pos, side)){
+   copy[pos] = EMPTY;
+  }
+ }
+ return copy;
+}
+
+function makeMoveBoard(b, piece, dst, side){
+ let copy = [...b];
+ copy[piece] = EMPTY;
+ copy[dst] = side;
+ return captureImmobilizedBoard(copy, side);
+}
+
+function mobility(b, side){
+ return legalMovesBoard(b, side).length;
+}
+
+function evaluateBoard(b){
+ const w = getPositionsBoard(b, PLAYER);
+ const bot = getPositionsBoard(b, BOT);
+
+ if(w.length <= 2) return 10000;
+ if(bot.length <= 2) return -10000;
+
+ const material = (bot.length - w.length) * 100;
+ const mob = (mobility(b, BOT) - mobility(b, PLAYER)) * 6;
+ return material + mob;
+}
+
+function minimax(b, depth, maximizing, alpha=-Infinity, beta=Infinity){
+ if(depth === 0){
+  return {score: evaluateBoard(b), move: null};
+ }
+
+ const side = maximizing ? BOT : PLAYER;
+ const moves = legalMovesBoard(b, side);
+
+ if(moves.length === 0){
+  return {score: evaluateBoard(b), move: null};
+ }
+
+ let bestMove = null;
+
+ if(maximizing){
+  let maxEval = -Infinity;
+  for(const move of moves){
+   let next = makeMoveBoard(b, move.piece, move.dst, BOT);
+   let result = minimax(next, depth - 1, false, alpha, beta);
+   if(result.score > maxEval){
+    maxEval = result.score;
+    bestMove = move;
+   }
+   alpha = Math.max(alpha, result.score);
+   if(beta <= alpha) break;
+  }
+  return {score: maxEval, move: bestMove};
+ } else {
+  let minEval = Infinity;
+  for(const move of moves){
+   let next = makeMoveBoard(b, move.piece, move.dst, PLAYER);
+   let result = minimax(next, depth - 1, true, alpha, beta);
+   if(result.score < minEval){
+    minEval = result.score;
+    bestMove = move;
+   }
+   beta = Math.min(beta, result.score);
+   if(beta <= alpha) break;
+  }
+  return {score: minEval, move: bestMove};
+ }
+}
+
+function checkWinner(){
+ const w = getPositionsBoard(board, PLAYER).length;
+ const b = getPositionsBoard(board, BOT).length;
+
+ if(b <= 2){
+  isGameOver = true;
+  document.getElementById("statusBar").textContent = "שחקן לבן (W) ניצח!";
+  alert("שחקן לבן (W) ניצח!");
+  return true;
+ }
+
+ if(w <= 2){
+  isGameOver = true;
+  document.getElementById("statusBar").textContent = "שחקן שחור (B) ניצח!";
+  alert("שחקן שחור (B) ניצח!");
+  return true;
+ }
+
+ return false;
+}
+
+function botTurn(){
+ if(isGameOver) return;
+ 
+ const depth = parseInt(document.getElementById("botDifficulty").value) || 3;
+ let result = minimax(board, depth, true);
+
+ if(!result.move){
+  isGameOver = true;
+  document.getElementById("statusBar").textContent = "שחקן לבן (W) ניצח!";
+  alert("ניצחת!");
+  return;
+ }
+
+ board = makeMoveBoard(board, result.move.piece, result.move.dst, BOT);
+ draw();
+
+ if(checkWinner()) return;
+
+ currentTurn = PLAYER;
+ updateStatus();
+}
+
+function draw(){
+ ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+ const done = new Set();
+ for(const a in GRAPH){
+  for(const b of GRAPH[a]){
+   const key = [Math.min(a,b), Math.max(a,b)].join("-");
+   if(done.has(key)) continue;
+   done.add(key);
+
+   ctx.beginPath();
+   ctx.moveTo(...POSITIONS[a]);
+   ctx.lineTo(...POSITIONS[b]);
+   ctx.strokeStyle = "#704214";
+   ctx.lineWidth = 3;
+   ctx.stroke();
+  }
+ }
+
+ legalTargets.forEach(p=>{
+  let [x,y] = POSITIONS[p];
+  ctx.beginPath();
+  ctx.arc(x, y, 8, 0, Math.PI*2);
+  ctx.fillStyle = "lime";
+  ctx.fill();
+ });
+
+ for(const pos in POSITIONS){
+  let [x,y] = POSITIONS[pos];
+  ctx.beginPath();
+  ctx.arc(x, y, 18, 0, Math.PI*2);
+
+  let color = "#d6a05b";
+  if(board[pos] === PLAYER) color = "white";
+  if(board[pos] === BOT) color = "black";
+
+  ctx.fillStyle = color;
+  ctx.fill();
+
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = Number(pos) === selected ? "red" : "#444";
+  ctx.stroke();
+ }
+}
+
+canvas.addEventListener("click", e=>{
+ if(isGameOver) return;
+ if(gameMode === "pvb" && currentTurn === BOT) return;
+
+ const rect = canvas.getBoundingClientRect();
+ const mx = e.clientX - rect.left;
+ const my = e.clientY - rect.top;
+
+ let clicked = null;
+ for(const pos in POSITIONS){
+  let [x,y] = POSITIONS[pos];
+  let dx = mx - x;
+  let dy = my - y;
+  if(dx*dx + dy*dy < 20*20){
+   clicked = Number(pos);
+   break;
+  }
+ }
+
+ if(clicked === null) return;
+
+ if(selected === null){
+  if(board[clicked] === currentTurn){
+   selected = clicked;
+   legalTargets = possibleDestinationsBoard(board, clicked);
+  }
+  draw();
+  return;
+ }
+
+ if(legalTargets.includes(clicked)){
+  board = makeMoveBoard(board, selected, clicked, currentTurn);
+  selected = null;
+  legalTargets = [];
+  draw();
+
+  if(checkWinner()) return;
+
+  currentTurn = (currentTurn === PLAYER) ? BOT : PLAYER;
+  updateStatus();
+
+  if(gameMode === "pvb" && currentTurn === BOT){
+   setTimeout(botTurn, 300);
+  }
+ } else {
+  selected = null;
+  legalTargets = [];
+  draw();
+ }
+});
+
+resetGame();
+</script>
+</body>
+</html>
